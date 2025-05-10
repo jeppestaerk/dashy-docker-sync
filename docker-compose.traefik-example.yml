@@ -1,0 +1,108 @@
+services:
+
+  traefik:
+    image: traefik:v3.4
+    container_name: traefik # Used as name for container in Dashy
+    command: --api.insecure=true --providers.docker
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    labels:
+      - "traefik.enable=true" # Included in Dashy due to DASHY_DOCKER_LABEL_REGEX
+      - "traefik.http.routers.api.rule=Host(`traefik.docker.localhost`)"
+      - "traefik.http.routers.api.service=api@internal"
+      - "traefik.http.services.api.loadbalancer.server.port=8080" # Use this port in Dashy due to DASHY_DOCKER_PORT_LABEL_REGEX
+
+  whoami-in-dashy:
+    image: traefik/whoami
+    container_name: whoami # Used as name for container in Dashy
+    labels:
+      - "traefik.enable=true" # Included in Dashy due to DASHY_DOCKER_LABEL_REGEX
+      - "traefik.http.routers.whoami.rule=Host(`whoami.docker.localhost`)"
+      - "traefik.http.services.whoami.loadbalancer.server.port=80" # Use this port in Dashy due to DASHY_DOCKER_PORT_LABEL_REGEX
+
+  whoami-not-in-dashy:
+    image: traefik/whoami
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.whoami.rule=Host(`whoami.docker.localhost`)"
+      - "traefik.http.services.whoami.loadbalancer.server.port=80"
+      - "dashy.skip=true" # Skip this container in Dashy due to DASHY_DOCKER_IGNORE_LABEL_REGEX
+  
+  whoami-not-in-dashy-or-traefik:
+    image: traefik/whoami
+    labels:
+      - "traefik.enable=false" # Not included in Dashy due to DASHY_DOCKER_LABEL_REGEX == false
+
+  dashy-docker-sync:
+    # If you want to build the image locally from your Dockerfile:
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    # Or, if you want to use an image from a registry (like GHCR):
+    image: ghcr.io/jeppestaerk/dashy-docker-sync:latest
+    container_name: dashy-docker-sync
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # IMPORTANT: Replace '/path/to/your/dashy/conf.yml' with the actual path
+      # to your Dashy configuration file on the host machine.
+      # Example: - /mnt/user/appdata/dashy/user-data/conf.yml:/config/conf.yml
+      - ./config/conf.yml:/config/conf.yml
+    environment:
+      # --- Logging ---
+      - DASHY_LOG_LEVEL=INFO # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
+
+      # --- Dashy Configuration File ---
+      # - DASHY_CONFIG_PATH=/config/conf.yml # Default, if mounted elsewhere
+
+      # --- Behavior ---
+      - DASHY_RESET_ON_START=true # true or false
+      - DASHY_DOCKER_SECTION_NAME=Docker Containers # Name of the section in Dashy
+      - DASHY_EXPOSED_BY_DEFAULT=false # true or false
+
+      # --- Label Matching for Inclusion/Exclusion/Port ---
+      # If DASHY_EXPOSED_BY_DEFAULT=false, containers need a label matching this regex to be included.
+      - DASHY_DOCKER_LABEL_REGEX=^traefik\.enable$
+      # If a container has a label matching this regex AND its value is "true", it will be skipped.
+      - DASHY_DOCKER_IGNORE_LABEL_REGEX=^dashy\.ignore$
+      # Label key to find the port for the service URL.
+      - DASHY_DOCKER_PORT_LABEL_REGEX=^traefik\.http\.services\.[a-zA-Z0-9_-]+\.loadbalancer\.server\.port$
+
+      # --- URL and Item Generation Templates ---
+      # Hostname/IP used in DASHY_DOCKER_URL_TEMPLATE's {host} placeholder.
+      # Or set to your domain if services are exposed publicly/via reverse proxy.
+      - DASHY_DOCKER_URL_HOST=docker.localhost
+      - DASHY_DOCKER_URL_TEMPLATE=http://{name}.{host}
+      - DASHY_DOCKER_TITLE_TEMPLATE={name}
+      - DASHY_DOCKER_ICON_TEMPLATE=hl-{name} # Example: hl-mycontainer for Homarr icons, or mdi-docker, or full URL
+
+      # --- Docker Socket Path (if non-standard) ---
+      # - DOCKER_SOCKET=unix://var/run/docker.sock
+    networks:
+      - dashy
+    labels:
+      - traefik.enable=false
+
+  dashy:
+    image: lissy93/dashy
+    container_name: Dashy
+    volumes:
+      - ./config/conf.yml:/app/user-data/conf.yml
+    environment:
+      - NODE_ENV=production
+      - UID=1000
+      - GID=1000
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'node', '/app/services/healthcheck']
+      interval: 1m30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.dashy.rule=Host(`dashy.docker.localhost`)
+      - traefik.http.services.dashy.loadbalancer.server.port=8080

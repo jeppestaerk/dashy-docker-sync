@@ -1,0 +1,10 @@
+pageInfo:
+  title: Dashy
+  navLinks:
+  - title: GitHub
+    path: https://github.com/Lissy93/dashy
+  - title: Documentation
+    path: https://dashy.to/docs
+appConfig:
+  theme: nord-frost
+sections: []
