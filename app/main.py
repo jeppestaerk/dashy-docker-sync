@@ -55,7 +55,7 @@ while True:
         for event in event_stream:
             if event["Type"] == "container":
                 action = event["Action"]
-                container_id = event["id"]
+                container_id = event.get("Actor").get("ID")
                 logging.debug(f"{EMOJIS['EVENT']} Received event: {action} for container ID: {container_id}")
                 try:
                     container = client.containers.get(container_id)
